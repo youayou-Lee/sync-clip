@@ -44,7 +44,7 @@ class UDPClipboardNetwork(NetworkInterface):
         self._device_lock = threading.Lock()
 
         # Device timeout (seconds)
-        self._device_timeout = 30  # Remove devices after 30 seconds of no heartbeat
+        self._device_timeout = 15  # Remove devices after 15 seconds of no heartbeat
 
     def _get_local_ip(self) -> str:
         """Get local IP address."""
@@ -207,7 +207,7 @@ class UDPClipboardNetwork(NetworkInterface):
                         if self._device_callback:
                             self._device_callback('device_left', device)
 
-                time.sleep(5)  # Check every 5 seconds
+                time.sleep(2)  # Check every 2 seconds for faster detection
             except Exception as e:
                 print(f"Error in device cleanup: {e}")
                 break
@@ -265,7 +265,10 @@ class UDPClipboardNetwork(NetworkInterface):
                     bind_success = True
                     break
                 except OSError as e:
-                    if e.winerr == 10048 or "Address already in use" in str(e):
+                    # Handle both Windows and Linux "Address already in use" errors
+                    if (hasattr(e, 'winerr') and e.winerr == 10048) or \
+                       (hasattr(e, 'errno') and e.errno == 98) or \
+                       "Address already in use" in str(e):
                         # Port is in use, try the next one
                         self.port += 1
                         print(f"Port {self.port-1} is in use, trying port {self.port}")
@@ -286,6 +289,13 @@ class UDPClipboardNetwork(NetworkInterface):
                         self._handle_packet(packet, addr)
                 except socket.timeout:
                     continue
+                except OSError as e:
+                    # Handle socket closure gracefully
+                    if e.errno == 9 or "Bad file descriptor" in str(e):
+                        # Socket was closed, exit the loop
+                        break
+                    else:
+                        print(f"Error receiving data: {e}")
                 except Exception as e:
                     print(f"Error receiving data: {e}")
 
@@ -326,17 +336,27 @@ class UDPClipboardNetwork(NetworkInterface):
         """Stop listening for clipboard data."""
         self._listening = False
 
-        # Close socket to interrupt listening loop
+        # Close sockets to interrupt listening loops
         if self._socket:
-            self._socket.close()
-
-        # Wait for threads to finish
-        for thread in [self._listen_thread, self._heartbeat_thread, self._cleanup_thread]:
-            if thread and thread.is_alive():
-                thread.join(timeout=2)
+            try:
+                self._socket.close()
+            except Exception as e:
+                print(f"Error closing socket: {e}")
+            self._socket = None
 
         if self._broadcast_socket:
-            self._broadcast_socket.close()
+            try:
+                self._broadcast_socket.close()
+            except Exception as e:
+                print(f"Error closing broadcast socket: {e}")
+            self._broadcast_socket = None
+
+        # Wait for threads to finish with longer timeout
+        for thread in [self._listen_thread, self._heartbeat_thread, self._cleanup_thread]:
+            if thread and thread.is_alive():
+                thread.join(timeout=5)
+                if thread.is_alive():
+                    print(f"Warning: Thread {thread.name} did not shutdown gracefully")
 
     def get_connected_devices(self) -> List[DeviceInfo]:
         """Get list of connected devices."""
