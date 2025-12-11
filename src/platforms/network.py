@@ -46,6 +46,10 @@ class UDPClipboardNetwork(NetworkInterface):
         # Device timeout (seconds)
         self._device_timeout = 15  # Remove devices after 15 seconds of no heartbeat
 
+        # Data deduplication
+        self._processed_clipboard_data: set[str] = set()
+        self._dedup_lock = threading.Lock()
+
     def _get_local_ip(self) -> str:
         """Get local IP address."""
         try:
@@ -106,15 +110,43 @@ class UDPClipboardNetwork(NetworkInterface):
     def _deserialize_clipboard_data(self, packet_data: Dict[str, Any]) -> ClipboardData:
         """Deserialize clipboard data from network transmission."""
         try:
+            # Validate required fields
+            required_fields = ['content', 'type', 'timestamp', 'device_name']
+            for field in required_fields:
+                if field not in packet_data:
+                    print(f"Error: Missing required field '{field}' in clipboard data")
+                    return None
+
             content = packet_data['content']
-            if packet_data['type'] == ClipboardType.IMAGE.value:
-                content = base64.b64decode(content)
+
+            # Handle different data types
+            try:
+                clipboard_type = ClipboardType(packet_data['type'])
+            except ValueError:
+                print(f"Error: Invalid clipboard type '{packet_data['type']}'")
+                return None
+
+            if clipboard_type == ClipboardType.IMAGE:
+                try:
+                    content = base64.b64decode(content)
+                except Exception as e:
+                    print(f"Error decoding base64 image data: {e}")
+                    return None
+
+            # Ensure device_name is a string and content is properly encoded
+            device_name = str(packet_data['device_name'])
+            if isinstance(content, str):
+                # Ensure string content is properly encoded for cross-platform compatibility
+                try:
+                    content = content.encode('utf-8').decode('utf-8')
+                except UnicodeError:
+                    content = str(content)  # Fallback to string conversion
 
             return ClipboardData(
                 content=content,
-                type=ClipboardType(packet_data['type']),
-                timestamp=packet_data['timestamp'],
-                device_name=packet_data['device_name']
+                type=clipboard_type,
+                timestamp=float(packet_data['timestamp']),
+                device_name=device_name
             )
         except Exception as e:
             print(f"Error deserializing clipboard data: {e}")
@@ -252,6 +284,9 @@ class UDPClipboardNetwork(NetworkInterface):
 
         sender_device_id = f"{packet.sender_name}@{packet.sender_ip}"
 
+        # Debug: Print packet type for debugging (can be removed in production)
+        # print(f"Debug: Received packet type '{packet.packet_type}' from {packet.sender_name}")
+
         if packet.packet_type in ["device_announce", "device_discovery", "device_heartbeat"]:
             # Device management packets
             device_info = DeviceInfo(
@@ -270,7 +305,29 @@ class UDPClipboardNetwork(NetworkInterface):
             # Clipboard data packet
             clipboard_data = self._deserialize_clipboard_data(packet.data)
             if clipboard_data and self._clipboard_callback:
+                # Check for duplicate data using a unique identifier
+                data_id = f"{packet.sender_name}@{packet.sender_ip}:{clipboard_data.timestamp}:{hash(str(clipboard_data.content)[:100])}"
+
+                with self._dedup_lock:
+                    if data_id in self._processed_clipboard_data:
+                        # Duplicate data, skip processing
+                        return
+
+                    # Add to processed set and clean old entries (keep only recent ones)
+                    self._processed_clipboard_data.add(data_id)
+
+                    # Clean up old entries to prevent memory leak (keep only last 100)
+                    if len(self._processed_clipboard_data) > 100:
+                        # Remove oldest 50 entries
+                        old_entries = list(self._processed_clipboard_data)[:50]
+                        for entry in old_entries:
+                            self._processed_clipboard_data.discard(entry)
+
+                # Process the unique clipboard data
                 self._clipboard_callback(clipboard_data)
+        else:
+            # Unknown packet type - log for debugging
+            print(f"Warning: Unknown packet type '{packet.packet_type}' from {sender_device_id}")
 
     def _listen_loop(self):
         """Main listening loop."""
@@ -324,6 +381,17 @@ class UDPClipboardNetwork(NetworkInterface):
                     packet = self._deserialize_packet(data)
                     if packet:
                         self._handle_packet(packet, addr)
+                    else:
+                        # Debug: Failed to deserialize packet
+                        # print(f"Debug: Failed to deserialize packet from {addr}, data length: {len(data)}")
+                        # Print first few bytes for debugging
+                        # if len(data) > 0:
+                        #     try:
+                        #         preview = data[:50].decode('utf-8', errors='ignore')
+                        #         print(f"Data preview: {preview}")
+                        #     except:
+                        #         print(f"Data bytes: {data[:20]}")
+                        pass
                 except socket.timeout:
                     continue
                 except OSError as e:

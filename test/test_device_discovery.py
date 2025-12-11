@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from platforms.network import UDPClipboardNetwork
 from interfaces import DeviceInfo
