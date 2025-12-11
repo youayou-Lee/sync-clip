@@ -37,6 +37,10 @@ class ClipboardApp:
         # Handle window closing
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        # Setup keyboard shortcuts
+        self.root.bind('<Control-l>', lambda event: self.clear_history())
+        self.root.bind('<Control-L>', lambda event: self.clear_history())
+
     def setup_ui(self):
         """Setup the user interface."""
         # Main frame
@@ -56,9 +60,18 @@ class ClipboardApp:
         left_frame.rowconfigure(1, weight=1)
         left_frame.columnconfigure(0, weight=1)
 
+        # Title and clear button frame
+        title_frame = ttk.Frame(left_frame)
+        title_frame.grid(row=0, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
+        title_frame.columnconfigure(0, weight=1)
+
         # Title for history
-        title_label = ttk.Label(left_frame, text="剪贴板历史", font=('Arial', 14, 'bold'))
-        title_label.grid(row=0, column=0, pady=(0, 10), sticky=tk.W)
+        title_label = ttk.Label(title_frame, text="剪贴板历史", font=('Arial', 14, 'bold'))
+        title_label.grid(row=0, column=0, sticky=tk.W)
+
+        # Clear history button
+        clear_button = ttk.Button(title_frame, text="清空历史 (Ctrl+L)", command=self.clear_history)
+        clear_button.grid(row=0, column=1, padx=(10, 0))
 
         # History frame
         self.history_frame = ttk.Frame(left_frame)
@@ -316,6 +329,12 @@ class ClipboardApp:
             self.status_var.set(f"已复制: {data.device_name} 的内容")
         except Exception as e:
             messagebox.showerror("错误", f"复制失败: {str(e)}")
+
+    def clear_history(self):
+        """Clear clipboard history."""
+        if messagebox.askyesno("确认清空", "确定要清空所有剪贴板历史记录吗？\n此操作不可恢复。"):
+            self.manager.clear_history()
+            self.update_ui()  # Refresh UI to show empty history
 
     def on_closing(self):
         """Handle window closing."""

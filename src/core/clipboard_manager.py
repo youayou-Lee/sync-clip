@@ -8,19 +8,19 @@ import threading
 
 from interfaces import ClipboardData, ClipboardType, DeviceInfo
 from platforms.clipboard_monitor import CrossPlatformClipboardMonitor
-from platforms.network import UDPClipboardNetwork
+from platforms.websocket_network import WebSocketClipboardNetwork
 
 class ClipboardManager:
     """Manages clipboard history and synchronization."""
 
-    def __init__(self, max_history: int = 5, data_dir: str = "data"):
+    def __init__(self, max_history: int = 5, data_dir: str = "data", websocket_port: int = 8765):
         self.max_history = max_history
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
 
         # Initialize components
         self.clipboard_monitor = CrossPlatformClipboardMonitor()
-        self.network = UDPClipboardNetwork()
+        self.network = WebSocketClipboardNetwork(port=websocket_port)
 
         # History storage
         self.history = deque(maxlen=max_history)
@@ -77,6 +77,30 @@ class ClipboardManager:
     def copy_to_clipboard(self, data: ClipboardData) -> bool:
         """Copy data to local clipboard."""
         return self.clipboard_monitor.set_clipboard_data(data)
+
+    def clear_history(self) -> None:
+        """Clear all clipboard history and remove saved image files."""
+        with self._lock:
+            # Clear in-memory history
+            self.history.clear()
+
+            # Remove saved image files
+            try:
+                if self.data_dir.exists():
+                    for file_path in self.data_dir.glob("*.png"):
+                        try:
+                            file_path.unlink()
+                        except Exception as e:
+                            print(f"Error removing file {file_path}: {e}")
+            except Exception as e:
+                print(f"Error clearing history directory: {e}")
+
+            print("Clipboard history cleared")
+
+    def get_history_count(self) -> int:
+        """Get the number of items in history."""
+        with self._lock:
+            return len(self.history)
 
     def _on_device_event(self, event_type: str, device: DeviceInfo):
         """Handle device events (join/leave)."""
