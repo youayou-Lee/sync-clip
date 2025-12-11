@@ -75,6 +75,7 @@ uv run python main.py
 ```
 sync-clip/
 ├── main.py                 # 主程序入口
+├── fix_firewall.ps1       # Windows防火墙修复脚本
 ├── src/
 │   ├── ui/
 │   │   └── app.py         # 图形用户界面
@@ -85,6 +86,12 @@ sync-clip/
 │   │   └── network.py     # 网络通信模块
 │   └── interfaces/
 │       └── __init__.py    # 数据接口定义
+├── test/                  # 测试脚本目录
+│   ├── test_code_quality.py       # 代码质量检查
+│   ├── test_device_discovery.py   # 设备发现测试
+│   ├── simple_device_test.py      # 单设备测试
+│   ├── multi_device_test.py       # 多设备测试
+│   └── network_diagnostic.py      # 网络诊断工具
 ├── pyproject.toml         # 项目配置和依赖
 └── README.md             # 项目说明文档
 ```
@@ -110,24 +117,36 @@ sync-clip/
 
 ## 测试工具
 
-项目提供了多个测试工具来验证功能：
+项目提供了多个测试工具来验证功能，所有测试脚本位于 `test/` 目录下：
 
 ### 设备发现测试
 ```bash
 # 单设备网络测试
-uv run python simple_device_test.py
+uv run python test/simple_device_test.py
 
 # 多设备测试（同一台机器）
-uv run python multi_device_test.py --instances 2 --duration 30
+uv run python test/multi_device_test.py --instances 2 --duration 30
 
 # 指定端口测试
-uv run python multi_device_test.py --port 5560 --duration 60
+uv run python test/multi_device_test.py --port 5560 --duration 60
 ```
 
 ### 基础设备发现
 ```bash
 # 基本设备发现功能测试
-uv run python test_device_discovery.py
+uv run python test/test_device_discovery.py
+```
+
+### 网络诊断工具
+```bash
+# 运行网络诊断，排查连接问题
+uv run python test/network_diagnostic.py
+```
+
+### 代码质量检查
+```bash
+# 检查代码质量和风格
+uv run python test/test_code_quality.py
 ```
 
 ## 网络配置
@@ -144,21 +163,92 @@ uv run python test_device_discovery.py
 
 ## 故障排除
 
-### 设备未发现
+### 常见问题及解决方案
+
+#### ❌ Windows端能检测到Linux端，但Linux端无法检测到Windows端
+
+**症状**: 在Windows上可以看到Linux设备，但在Linux上无法看到Windows设备。
+
+**原因分析**:
+1. **Windows防火墙阻止入站UDP广播** - 这是最常见的原因
+2. **平台特定的socket选项差异**
+3. **广播地址兼容性问题**
+
+**解决方案**:
+
+1. **Windows防火墙设置** (推荐方案):
+   ```powershell
+   # 以管理员身份运行PowerShell，然后执行：
+   .\fix_firewall.ps1
+   ```
+
+   或者手动添加防火墙规则：
+   ```powershell
+   # 以管理员身份运行PowerShell
+   New-NetFirewallRule -DisplayName "SyncClip UDP" -Direction Inbound -Protocol UDP -LocalPort 5555-5559 -Action Allow -Profile Any
+   ```
+
+2. **运行网络诊断工具**:
+   ```bash
+   # 在Windows上
+   uv run python test/network_diagnostic.py
+
+   # 在Linux上
+   uv run python test/network_diagnostic.py
+   ```
+
+3. **Linux防火墙设置** (如果适用):
+   ```bash
+   # 检查UFW状态
+   sudo ufw status
+
+   # 允许UDP端口
+   sudo ufw allow 5555:5559/udp
+
+   # 或者临时禁用防火墙进行测试
+   sudo ufw disable
+   ```
+
+#### ❌ 设备未发现
 1. **检查网络连接**: 确保设备在同一局域网内
-2. **防火墙设置**: 允许UDP广播通信
+2. **防火墙设置**: 允许UDP广播通信（详见上面Windows防火墙解决方案）
 3. **端口冲突**: 使用不同的启动端口：`uv run python main.py --port 5560`
 4. **重启应用**: 重新启动应用程序触发设备发现
+5. **运行诊断**: `uv run python test/network_diagnostic.py`
 
-### 连接不稳定
+#### ❌ 连接不稳定
 1. **网络延迟**: 检查网络质量
 2. **防火墙干扰**: 临时禁用防火墙测试
 3. **路由器设置**: 检查路由器是否支持UDP广播
 
-### 界面问题
+#### ❌ 界面问题
 1. **依赖缺失**: 运行 `uv sync` 安装所有必需的Python包
 2. **权限问题**: 确保有剪贴板访问权限
 3. **平台兼容**: 检查是否支持当前操作系统
+
+### 诊断步骤
+
+遇到设备发现问题时，按以下步骤进行诊断：
+
+1. **运行网络诊断**:
+   ```bash
+   uv run python test/network_diagnostic.py
+   ```
+
+2. **检查防火墙状态**:
+   - Windows: 查看`fix_firewall.ps1`脚本执行结果
+   - Linux: `sudo ufw status` 或 `sudo iptables -L -n`
+
+3. **测试设备发现**:
+   ```bash
+   uv run python test/test_device_discovery.py
+   ```
+
+4. **验证网络连通性**:
+   ```bash
+   # 测试是否可以ping通对方设备
+   ping <对方设备IP>
+   ```
 
 ## 注意事项
 
@@ -177,6 +267,15 @@ uv run python test_device_discovery.py
 本项目采用MIT许可证，详情请参阅LICENSE文件。
 
 ## 更新日志
+
+### v2.1.0 - 跨平台兼容性修复版本 🔧
+- 🐛 **修复Windows防火墙问题**: 解决Windows端能检测Linux但反之不行的问题
+- 🛠️ **改进网络广播机制**: 增强跨平台UDP广播兼容性
+- 🔧 **平台特定优化**: 为Windows和Linux系统添加特定的socket选项
+- 📋 **新增防火墙修复脚本**: `fix_firewall.ps1` 自动配置Windows防火墙规则
+- 🩺 **网络诊断工具**: `network_diagnostic.py` 用于排查连接问题
+- 📁 **测试脚本重组**: 将所有测试脚本移至 `test/` 目录
+- 📚 **完善文档**: 更新故障排除指南和常见问题解决方案
 
 ### v2.0.0 - 设备发现版本 🆕
 - ✨ **设备自动发现**: 启动时自动搜索局域网内的其他运行实例

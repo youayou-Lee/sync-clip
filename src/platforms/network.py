@@ -127,6 +127,11 @@ class UDPClipboardNetwork(NetworkInterface):
                 self._broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+                # Platform-specific socket options
+                if self.platform != 'Windows':
+                    # On Linux/macOS, set broadcast timeout
+                    self._broadcast_socket.settimeout(2.0)
+
             serialized_data = self._serialize_packet(packet)
 
             # Broadcast to our listening port and common ports
@@ -135,7 +140,23 @@ class UDPClipboardNetwork(NetworkInterface):
 
             for port in ports_to_broadcast:
                 try:
-                    self._broadcast_socket.sendto(serialized_data, ('<broadcast>', port))
+                    # Try different broadcast addresses for better compatibility
+                    broadcast_addresses = ['<broadcast>', '255.255.255.255']
+
+                    # Add network-specific broadcast if possible
+                    if self.device_ip and '.' in self.device_ip:
+                        parts = self.device_ip.split('.')
+                        if len(parts) == 4:
+                            network_broadcast = f"{parts[0]}.{parts[1]}.{parts[2]}.255"
+                            broadcast_addresses.append(network_broadcast)
+
+                    for broadcast_addr in broadcast_addresses:
+                        try:
+                            self._broadcast_socket.sendto(serialized_data, (broadcast_addr, port))
+                        except Exception as e:
+                            # Silently continue for individual broadcast address failures
+                            continue
+
                 except Exception as e:
                     print(f"Error broadcasting to port {port}: {e}")
 
@@ -257,6 +278,19 @@ class UDPClipboardNetwork(NetworkInterface):
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+            # Windows specific: Allow multiple processes to bind to the same port
+            if self.platform == 'Windows':
+                try:
+                    self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except AttributeError:
+                    pass  # SO_REUSEPORT not available on all Windows versions
+            else:
+                # Linux/macOS: Set SO_REUSEPORT for better multi-instance support
+                try:
+                    self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except AttributeError:
+                    pass
+
             # Try to bind to the specified port, fallback to random port if unavailable
             bind_success = False
             for attempt in range(10):  # Try 10 times
@@ -266,20 +300,23 @@ class UDPClipboardNetwork(NetworkInterface):
                     break
                 except OSError as e:
                     # Handle both Windows and Linux "Address already in use" errors
-                    if (hasattr(e, 'winerr') and e.winerr == 10048) or \
-                       (hasattr(e, 'errno') and e.errno == 98) or \
-                       "Address already in use" in str(e):
+                    windows_port_error = hasattr(e, 'winerr') and e.winerr == 10048
+                    linux_port_error = hasattr(e, 'errno') and e.errno == 98
+                    generic_error = "Address already in use" in str(e)
+
+                    if windows_port_error or linux_port_error or generic_error:
                         # Port is in use, try the next one
                         self.port += 1
                         print(f"Port {self.port-1} is in use, trying port {self.port}")
                     else:
+                        print(f"Bind error (not port in use): {e}")
                         raise
 
             if not bind_success:
                 raise Exception("Could not bind to any port in range")
 
             self._socket.settimeout(1.0)  # Set timeout for periodic checks
-            print(f"Successfully bound to port {self.port}")
+            print(f"Successfully bound to port {self.port} on {self.platform}")
 
             while self._listening:
                 try:
