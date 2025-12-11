@@ -1,0 +1,45 @@
+# Claude Code Hooks Configuration
+# This file contains hooks for various automation tasks
+
+hooks:
+  # Pre-commit project code quality check (excludes .claude directory)
+  - name: "pre-commit-project-code-check"
+    tool: "bash"
+    event: "before"
+    command: ".claude/hooks/pre_commit_project_code_check.sh"
+    enabled: true
+    conditions:
+      match: "git commit"
+    timeout: 60
+
+  # Activity logging
+  - name: "log-commands"
+    event: "before"
+    command: |
+      LOG_FILE="$HOME/.claude/logs/claude_activity_$(date +%Y%m%d).log"
+      mkdir -p "$(dirname "$LOG_FILE")"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$$] [${TOOL_NAME:-unknown}] ${BASH_COMMAND:-N/A}" >> "$LOG_FILE"
+    enabled: true
+
+  # Git safety check (prevent dangerous operations)
+  - name: "git-safety"
+    tool: "bash"
+    event: "before"
+    command: |
+      if echo "$BASH_COMMAND" | grep -qE "(git push.*--force|git reset --hard)"; then
+        echo "⚠️  Dangerous git command detected:"
+        echo "  $BASH_COMMAND"
+        echo ""
+        if echo "$BASH_COMMAND" | grep -q "git push.*--force"; then
+          echo "Consider using: git push --force-with-lease"
+        fi
+        echo ""
+        read -p "Continue? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+          echo "❌ Command cancelled"
+          exit 1
+        fi
+      fi
+    enabled: true
+    interactive: true

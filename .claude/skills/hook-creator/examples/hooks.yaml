@@ -1,0 +1,82 @@
+# Example Claude Code Hooks Configuration
+# This file demonstrates various hook types and configurations
+
+hooks:
+  # Basic logging hook - logs all tool executions
+  - name: "log-all-commands"
+    event: "before"
+    command: ".claude/hooks/templates/logging.sh"
+    enabled: true
+
+  # Git safety hook - prevents dangerous git operations
+  - name: "git-safety"
+    tool: "bash"
+    event: "before"
+    command: ".claude/hooks/templates/git_safety.sh"
+    enabled: true
+    interactive: true
+
+  # Code quality check for Python files
+  - name: "python-quality-check"
+    tool: "write"
+    event: "after"
+    command: ".claude/hooks/templates/code_quality.sh"
+    enabled: true
+    conditions:
+      file_extension: "py"
+      file_size: "< 1MB"
+    timeout: 30
+
+  # Session initialization
+  - name: "session-init"
+    event: "session_start"
+    command: ".claude/hooks/templates/session_init.sh"
+    enabled: true
+
+  # Backup important files before modification
+  - name: "backup-config-files"
+    tool: "write"
+    event: "before"
+    command: |
+      if [[ "$FILE_PATH" =~ \.(json|yaml|yml|toml|conf|config)$ ]]; then
+        BACKUP_DIR="$HOME/.claude/backups/$(date +%Y-%m-%d)"
+        mkdir -p "$BACKUP_DIR"
+        cp "$FILE_PATH" "$BACKUP_DIR/$(basename "$FILE_PATH").$(date +%H%M%S).bak"
+      fi
+    enabled: true
+
+  # Notify on deployment-related commands
+  - name: "deploy-notification"
+    tool: "bash"
+    event: "after"
+    command: |
+      if echo "$BASH_COMMAND" | grep -qE "(docker push|kubectl apply|deploy|publish)"; then
+        echo "🚀 Deployment action detected: $BASH_COMMAND"
+        # Add your notification logic here (Slack, email, etc)
+      fi
+    enabled: false
+
+  # Custom slash command hook
+  - name: "my-custom-command"
+    event: "slash_command"
+    command: "./scripts/custom_handler.sh"
+    enabled: false
+
+  # Clean up temporary files on session end
+  - name: "cleanup-temp"
+    event: "session_end"
+    command: |
+      rm -rf ~/.claude/temp/* 2>/dev/null || true
+      echo "Session cleanup completed"
+    enabled: true
+
+  # Environment-specific hook
+  - name: "development-checks"
+    tool: "bash"
+    event: "before"
+    command: |
+      if [[ "$ENVIRONMENT" == "production" ]]; then
+        echo "⚠️  Running in production mode - extra checks enabled"
+        # Add production-specific validations
+      fi
+    enabled: true
