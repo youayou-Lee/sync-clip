@@ -15,6 +15,21 @@ class ClipboardData:
     timestamp: float
     device_name: str
 
+@dataclass
+class DeviceInfo:
+    name: str
+    ip_address: str
+    last_seen: float
+    platform: str = "Unknown"
+
+@dataclass
+class NetworkPacket:
+    packet_type: str  # "device_announce", "device_discovery", "clipboard_data", "device_heartbeat"
+    sender_name: str
+    sender_ip: str
+    timestamp: float
+    data: Any = None
+
 class ClipboardMonitorInterface(ABC):
     """Interface for platform-specific clipboard monitoring."""
 
@@ -54,4 +69,24 @@ class NetworkInterface(ABC):
     @abstractmethod
     def stop_listening(self) -> None:
         """Stop listening for clipboard data."""
+        pass
+
+    @abstractmethod
+    def announce_device(self) -> None:
+        """Announce device presence to network."""
+        pass
+
+    @abstractmethod
+    def discover_devices(self) -> None:
+        """Send device discovery request."""
+        pass
+
+    @abstractmethod
+    def get_connected_devices(self) -> list[DeviceInfo]:
+        """Get list of connected devices."""
+        pass
+
+    @abstractmethod
+    def set_device_callback(self, callback) -> None:
+        """Set callback for device events (join/leave)."""
         pass

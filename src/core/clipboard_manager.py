@@ -1,12 +1,12 @@
 """Core clipboard management logic."""
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, Callable
 from collections import deque
 from pathlib import Path
 import threading
 
-from interfaces import ClipboardData, ClipboardType
+from interfaces import ClipboardData, ClipboardType, DeviceInfo
 from platforms.clipboard_monitor import CrossPlatformClipboardMonitor
 from platforms.network import UDPClipboardNetwork
 
@@ -26,9 +26,13 @@ class ClipboardManager:
         self.history = deque(maxlen=max_history)
         self._lock = threading.Lock()
 
+        # Device event callbacks
+        self._device_callbacks: List[Callable[[str, DeviceInfo], None]] = []
+
         # Setup callbacks
         self.clipboard_monitor.start_monitoring(self._on_local_clipboard_change)
         self.network.start_listening(self._on_network_clipboard_receive)
+        self.network.set_device_callback(self._on_device_event)
 
     def _on_local_clipboard_change(self, data: ClipboardData):
         """Handle local clipboard changes."""
@@ -73,6 +77,26 @@ class ClipboardManager:
     def copy_to_clipboard(self, data: ClipboardData) -> bool:
         """Copy data to local clipboard."""
         return self.clipboard_monitor.set_clipboard_data(data)
+
+    def _on_device_event(self, event_type: str, device: DeviceInfo):
+        """Handle device events (join/leave)."""
+        for callback in self._device_callbacks:
+            try:
+                callback(event_type, device)
+            except Exception as e:
+                print(f"Error in device callback: {e}")
+
+    def add_device_callback(self, callback: Callable[[str, DeviceInfo], None]):
+        """Add a callback for device events."""
+        self._device_callbacks.append(callback)
+
+    def get_connected_devices(self) -> List[DeviceInfo]:
+        """Get list of connected devices."""
+        return self.network.get_connected_devices()
+
+    def discover_devices(self):
+        """Trigger device discovery."""
+        self.network.discover_devices()
 
     def shutdown(self):
         """Shutdown the clipboard manager."""
