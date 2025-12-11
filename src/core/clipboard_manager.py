@@ -8,19 +8,19 @@ import threading
 
 from interfaces import ClipboardData, ClipboardType, DeviceInfo
 from platforms.clipboard_monitor import CrossPlatformClipboardMonitor
-from platforms.websocket_network import WebSocketClipboardNetwork
+from platforms.network import UDPClipboardNetwork
 
 class ClipboardManager:
     """Manages clipboard history and synchronization."""
 
-    def __init__(self, max_history: int = 5, data_dir: str = "data", websocket_port: int = 8765):
+    def __init__(self, max_history: int = 5, data_dir: str = "data", udp_port: int = 5555):
         self.max_history = max_history
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
 
         # Initialize components
         self.clipboard_monitor = CrossPlatformClipboardMonitor()
-        self.network = WebSocketClipboardNetwork(port=websocket_port)
+        self.network = UDPClipboardNetwork(port=udp_port)
 
         # History storage
         self.history = deque(maxlen=max_history)

@@ -44,7 +44,7 @@ class UDPClipboardNetwork(NetworkInterface):
         self._device_lock = threading.Lock()
 
         # Device timeout (seconds)
-        self._device_timeout = 15  # Remove devices after 15 seconds of no heartbeat
+        self._device_timeout = 60  # Remove devices after 60 seconds of no heartbeat (increased for stability)
 
         # Data deduplication
         self._processed_clipboard_data: set[str] = set()
@@ -238,7 +238,7 @@ class UDPClipboardNetwork(NetworkInterface):
                     timestamp=time.time()
                 )
                 self._broadcast_packet(packet)
-                time.sleep(10)  # Send heartbeat every 10 seconds
+                time.sleep(15)  # Send heartbeat every 15 seconds (reduced frequency)
             except Exception as e:
                 print(f"Error sending heartbeat: {e}")
                 break
@@ -260,7 +260,7 @@ class UDPClipboardNetwork(NetworkInterface):
                         if self._device_callback:
                             self._device_callback('device_left', device)
 
-                time.sleep(2)  # Check every 2 seconds for faster detection
+                time.sleep(5)  # Check every 5 seconds for stability (reduced frequency)
             except Exception as e:
                 print(f"Error in device cleanup: {e}")
                 break
